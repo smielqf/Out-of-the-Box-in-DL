@@ -19,3 +19,16 @@
 语言|模型|
 :---:|:---:|
 中文|damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch
+
+***
+### 用法
+- 创建虚拟环境和安装依赖库。其中，创建虚拟环境采用的是Anaconda或者Miniconda软件。为了减少库冲突，建议统一使用pip安装。
+```
+conda create -n OutofBox python=3.8
+conda activate OutofBox
+pip install -r requirements.txt
+```
+- 使用脚本
+```
+    python auto_subtitle.py --video xxx
+```
