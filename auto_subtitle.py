@@ -21,16 +21,16 @@ from pydub import AudioSegment
 from typing import List
 
 
-def generate_srt_online(words:List[str], time_stamps:List[List[float,float]], output:str, max_sent_len:int = 20):
+def generate_srt_online(words:List[str], time_stamps:List[List[float]], output:str, max_sent_len:int = 20):
     """Given lists of words and corresponding timestamps, it can generate a srt file.
 
     Parameters
     ----------
     words : List[str]
         A list containing words in Chinese.
-    time_stamps : List[List[float,float]]
-        A list containing timestamps. The first value represents the beginning time of pronouced word while 
-        the second one is the ending time.
+    time_stamps : List[List[float]]
+        A list containing timestamps. Each timestamp contains two float numbers. The first value represents the beginning time of word 
+        while the second one is the ending time.
     output : str,
         The filename of target srt file, which includes the path optionally.
     max_sent_len : int, optional
@@ -232,7 +232,7 @@ if __name__ == '__main__':
     else:
         output_subtitle = args.output + '.txt'
     
-    convert_audio_to_text(audio_slice_list, language=args.language, interval_len=args.interval_len, output=output_subtitle, max_sent_len=args.max_sent_len, deice=args.device)
+    convert_audio_to_text(audio_slice_list, language=args.language, interval_len=args.interval_len, output=output_subtitle, max_sent_len=args.max_sent_len, device=args.device)
     for audio_slice in audio_slice_list:
         os.remove(audio_slice)
     
