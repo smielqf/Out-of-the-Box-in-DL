@@ -3,9 +3,8 @@
 ### 1. Spilt audio and frames
 ### 2. Convert audio to text with time stamps
 ### 3. Merge text into videos
+### Language Support: Chinese
 
-
-import librosa
 import os
 import math
 from time import strftime, gmtime
@@ -13,24 +12,38 @@ from tqdm import tqdm
 
 from modelscope.pipelines import pipeline as m_pipeline
 from modelscope.utils.constant import Tasks
+import librosa
 
 import moviepy.editor as mp
 from moviepy.video.tools.subtitles import SubtitlesClip
-
 from pydub import AudioSegment
 
+from typing import List
 
 
+def generate_srt_online(words:List[str], time_stamps:List[List[float,float]], output:str, max_sent_len:int = 20):
+    """Given lists of words and corresponding timestamps, it can generate a srt file.
 
-def generate_srt_online(words, time_stamps, output, max_sent_len = 20):
-    """
-    """
+    Parameters
+    ----------
+    words : List[str]
+        A list containing words in Chinese.
+    time_stamps : List[List[float,float]]
+        A list containing timestamps. The first value represents the beginning time of pronouced word while 
+        the second one is the ending time.
+    output : str,
+        The filename of target srt file, which includes the path optionally.
+    max_sent_len : int, optional
+        A number controls the length of sentence occurring in the video, by default 20 for Chinese.
+    """    
     def format_time(timestamp):
         if timestamp is None:
             return ''
         second = math.modf(timestamp / 1000)
         return strftime('%H:%M:%S', gmtime(second[1])) + ',' + str(int(round(second[0], 3) * 1000))
-    
+   
+    # If the gap between two words is larger than 400, it is recognized as an endding of one sentence 
+    # and a beginning of another sentence.
     interval_length = 400
     sentence = ''
     front = 0
@@ -67,6 +80,22 @@ def generate_srt_online(words, time_stamps, output, max_sent_len = 20):
             count += 1
 
 def split_audio_from_video(video_name, interval_len=60):
+    """Given a video, it is necessary to clip its audio to multiple smaller clipped audios, since too long
+    audio can lead to overflow of memory or video memory.
+
+    Parameters
+    ----------
+    video_name : str,
+        The filename of the given video.
+    interval_len : int, optional
+        A number controlling the length of clipped audio, by default 60. The smaller it is, the less memory or video
+        memory is required.
+
+    Returns
+    -------
+    [str,],
+        A list containing filenames of clipped audios.
+    """    
     prefix_name = ''.join(video_name.split('.')[:-1])
     video = mp.VideoFileClip(video_name)
     tmp_audio_name = prefix_name + "_tmp.wav"
@@ -89,7 +118,30 @@ def split_audio_from_video(video_name, interval_len=60):
     os.remove(tmp_audio_name)
     return audio_slice_list
 
-def convert_audio_to_text(audio_list, language, interval_len, output, max_sent_len, device='cpu'):
+def convert_audio_to_text(audio_list:List[str], language:str, interval_len:int, output:str, max_sent_len:int, device:str='cpu'):
+    """Given a list of audio, it can perform auto speech recogintion and generate a srt file.
+
+    Parameters
+    ----------
+    audio_list : List[str]
+        A list containing multiple audios. Usually, each audio should not be too long.
+    language : str
+        The language to recognize.
+    interval_len : int
+        A number determining the length of clipped audio. It is used to calculate timestamps of words.
+    output : str
+        The filename of the srt file.
+    max_sent_len : int
+        A number determining the length of sentence occurring in the video.
+    device : str, optional
+        The hardware for running ASR models, by default 'cpu'. If GPU is available, it can be set as "gpu".
+
+    Returns
+    -------
+    str
+        The filename of the generated srt file.
+    """        
+
     if language == 'english':
         pass
     elif language == 'chinese':
@@ -97,6 +149,12 @@ def convert_audio_to_text(audio_list, language, interval_len, output, max_sent_l
         total_timestamps = []
         for i in tqdm(range(len(audio_list))):
             audio_input, _ = librosa.load(audio_list[i], sr=16_000)
+            """"
+                The ASR model for Chinses is  "damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch". 
+                Developers can replace it with newest open source model in ModelScope or Hugging Face.
+                "damo/speech_timestamp_prediction-v1-16k-offline" is used to obtain the time stamp of pronounced words for
+                synthetizing the subtitle.
+            """
             p = m_pipeline(task=Tasks.auto_speech_recognition, 
                             model='damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch', 
                             timestamp_model="damo/speech_timestamp_prediction-v1-16k-offline", 
@@ -113,7 +171,25 @@ def convert_audio_to_text(audio_list, language, interval_len, output, max_sent_l
 
     return output
 
-def merge_text_into_video(video_name, subtitle, output, font, fontsize, color):
+def merge_text_into_video(video_name:str, subtitle:str, output:str, font:str, fontsize:int, color:str):
+    """
+        The code is following the example given in https://zulko.github.io/moviepy/_modules/moviepy/video/tools/subtitles.html.
+
+    Parameters
+    ----------
+    video_name : str
+        The filename of the given video.
+    subtitle : str
+        The filename of the srt file of given video.
+    output : str
+        The filename of the target video.
+    font : str
+        The font of the subtitle.
+    fontsize : int
+        The size of words occurring in the video.
+    color : str
+        The color of words occurring in the video.
+    """ 
     generator = lambda txt: mp.TextClip(txt, font=font, fontsize=fontsize, color=color)    
     subtitles = SubtitlesClip(subtitle, generator)
     video = mp.VideoFileClip(video_name)
