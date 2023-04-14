@@ -14,6 +14,8 @@ from modelscope.pipelines import pipeline as m_pipeline
 from modelscope.utils.constant import Tasks
 import librosa
 
+from transformers import pipeline as t_pipeline
+
 import moviepy.editor as mp
 from moviepy.video.tools.subtitles import SubtitlesClip
 from pydub import AudioSegment
@@ -21,7 +23,7 @@ from pydub import AudioSegment
 from typing import List
 
 
-def generate_srt_online(words:List[str], time_stamps:List[List[float]], output:str, max_sent_len:int = 20):
+def generate_srt_online(words:List[str], time_stamps:List[List[float]], output:str, max_sent_len:int=20, language='chinese'):
     """Given lists of words and corresponding timestamps, it can generate a srt file.
 
     Parameters
@@ -35,6 +37,8 @@ def generate_srt_online(words:List[str], time_stamps:List[List[float]], output:s
         The filename of target srt file, which includes the path optionally.
     max_sent_len : int, optional
         A number controls the length of sentence occurring in the video, by default 20 for Chinese.
+    language: str
+        The language of subtitles.
     """    
     def format_time(timestamp):
         if timestamp is None:
@@ -56,11 +60,14 @@ def generate_srt_online(words:List[str], time_stamps:List[List[float]], output:s
             sentence_timestamps.append([format_time(b), format_time(e)])
         elif len(sentence) >= max_sent_len or b - front > interval_length:
             sentence_list.append(sentence)
-            sentence = ''
+            sentence = ' '
             sentence += w
             sentence_timestamps.append([format_time(b), format_time(e)])
         else:
-            sentence += w
+            if language == 'chinese':
+                sentence += w
+            elif language == 'english':
+                sentence += ' ' + w
             sentence_timestamps[-1][1] = format_time(e)
         
         if len(sentence) >= max_sent_len:
@@ -143,10 +150,33 @@ def convert_audio_to_text(audio_list:List[str], language:str, interval_len:int, 
     """        
 
     if language == 'english':
-        pass
+        # MODEL_ID = "jonatasgrosman/wav2vec2-large-xlsr-53-english"
+        MODEL_ID = 'openai/whisper-large-v2'
+        total_text = []
+        total_timestamps = []
+        p = t_pipeline("automatic-speech-recognition", model=MODEL_ID, return_timestamps="word")
+        for i in tqdm(range(len(audio_list))):
+            audio_input, _ = librosa.load(audio_list[i], sr=16_000)
+            res = p(audio_input)
+
+            for t_t in res['chunks']:
+                text = t_t['text']
+                t_b, t_e = t_t['timestamp']
+                t_b = t_b * 1000 + i * interval_len * 1000
+                t_e = t_e * 1000 + i * interval_len * 1000
+                total_text.append(text)
+                total_timestamps.append([t_b, t_e])
+        generate_srt_online(total_text, total_timestamps, output=output, max_sent_len=max_sent_len, language=language)
+
+
     elif language == 'chinese':
         total_text = []
         total_timestamps = []
+        p = m_pipeline(task=Tasks.auto_speech_recognition, 
+                            model='damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch', 
+                            timestamp_model="damo/speech_timestamp_prediction-v1-16k-offline", 
+                            timestamp_model_revision="v1.0.5", 
+                            device=device,)
         for i in tqdm(range(len(audio_list))):
             audio_input, _ = librosa.load(audio_list[i], sr=16_000)
             """"
@@ -155,11 +185,6 @@ def convert_audio_to_text(audio_list:List[str], language:str, interval_len:int, 
                 "damo/speech_timestamp_prediction-v1-16k-offline" is used to obtain the time stamp of pronounced words for
                 synthetizing the subtitle.
             """
-            p = m_pipeline(task=Tasks.auto_speech_recognition, 
-                            model='damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch', 
-                            timestamp_model="damo/speech_timestamp_prediction-v1-16k-offline", 
-                            timestamp_model_revision="v1.0.5", 
-                            device=device,)
             res = p(audio_input)
             if 'text' in res:
                 total_text += res['text'].split(' ')
@@ -227,11 +252,11 @@ if __name__ == '__main__':
     args = parse_args()
 
     audio_slice_list = split_audio_from_video(video_name=args.video, interval_len=args.interval_len)
+    
     if args.output == '':
         output_subtitle = ''.join(args.video.split('.')[:-1]) + '_subtitle.txt'
     else:
         output_subtitle = args.output + '.txt'
-    
     convert_audio_to_text(audio_slice_list, language=args.language, interval_len=args.interval_len, output=output_subtitle, max_sent_len=args.max_sent_len, device=args.device)
     for audio_slice in audio_slice_list:
         os.remove(audio_slice)
